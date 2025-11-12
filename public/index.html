@@ -15,7 +15,7 @@
     <div class="container">
         <header>
             <h1>📁 Local Media Viewer</h1>
-            <p class="subtitle">Browse and play media files from your local directories</p>
+            <p class="subtitle">Browse and play media files from local directories and FTP servers</p>
         </header>
 
         <!-- Directory Selection Section -->
@@ -24,12 +24,19 @@
                 <input
                     type="text"
                     id="directoryInput"
-                    placeholder="Enter directory path (e.g., /home/user/Videos or C:\Users\YourName\Videos)"
+                    placeholder="Enter local path or FTP URL (e.g., /home/user/Videos or ftp://user:pass@host:21/path)"
                     class="directory-input"
                 >
                 <button id="scanBtn" class="btn btn-primary">
                     Scan Directory
                 </button>
+            </div>
+            <div class="path-help">
+                <strong>Local:</strong> /home/user/Videos or C:\Users\Videos
+                <br>
+                <strong>FTP:</strong> ftp://username:password@ftp.example.com:21/media
+                <br>
+                <strong>FTPS:</strong> ftps://username:password@ftp.example.com:990/media
             </div>
             <div id="statusMessage" class="status-message"></div>
         </section>
