@@ -451,71 +451,35 @@ function generateImageThumbnail(file, container) {
     };
 }
 
-// Generate Video Thumbnail using Canvas
+// Generate Video Thumbnail using server-side endpoint
 function generateVideoThumbnail(file, container) {
-    const mediaUrl = `http://localhost:3000/api/media/${encodeURIComponent(file.path)}`;
-
-    // Create hidden video element for thumbnail capture
-    const video = document.createElement('video');
-    video.src = mediaUrl;
-    video.crossOrigin = 'anonymous';
-    video.muted = true;
-    video.playsInline = true;
-    video.preload = 'metadata';
+    const thumbnailUrl = `http://localhost:3000/api/thumbnail/video/${encodeURIComponent(file.path)}`;
 
     // Add loading indicator
     const icon = getMediaIcon(file.type);
     container.innerHTML = `<span class="video-overlay thumbnail-loading">${icon}</span>`;
 
-    video.addEventListener('loadeddata', () => {
-        // Seek to 10% of video duration for a better frame
-        video.currentTime = Math.min(video.duration * 0.1, 5);
-    });
+    // Create image element for server-generated thumbnail
+    const img = document.createElement('img');
+    img.src = thumbnailUrl;
+    img.alt = file.name;
+    img.loading = 'lazy';
 
-    video.addEventListener('seeked', () => {
-        try {
-            const canvas = document.createElement('canvas');
-            canvas.width = 200;
-            canvas.height = 150;
+    img.onload = () => {
+        container.innerHTML = '';
+        container.appendChild(img);
 
-            const ctx = canvas.getContext('2d');
+        // Add play icon overlay
+        const playIcon = document.createElement('span');
+        playIcon.className = 'video-overlay';
+        playIcon.innerHTML = '▶';
+        container.appendChild(playIcon);
+    };
 
-            // Calculate aspect ratio
-            const videoAspect = video.videoWidth / video.videoHeight;
-            const canvasAspect = canvas.width / canvas.height;
-
-            let sx = 0, sy = 0, sw = video.videoWidth, sh = video.videoHeight;
-
-            if (videoAspect > canvasAspect) {
-                // Video is wider
-                sw = video.videoHeight * canvasAspect;
-                sx = (video.videoWidth - sw) / 2;
-            } else {
-                // Video is taller
-                sh = video.videoWidth / canvasAspect;
-                sy = (video.videoHeight - sh) / 2;
-            }
-
-            ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-
-            // Replace container content with canvas
-            container.innerHTML = '';
-            container.appendChild(canvas);
-
-            // Add play icon overlay
-            const playIcon = document.createElement('span');
-            playIcon.className = 'video-overlay';
-            playIcon.innerHTML = '▶';
-            container.appendChild(playIcon);
-        } catch (error) {
-            console.error('Error generating video thumbnail:', error);
-            container.innerHTML = `<span class="video-overlay">${icon}</span>`;
-        }
-    });
-
-    video.addEventListener('error', () => {
+    img.onerror = () => {
+        // Fallback to icon if thumbnail generation fails
         container.innerHTML = `<span class="video-overlay">${icon}</span>`;
-    });
+    };
 }
 
 // Get Media Icon
