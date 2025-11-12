@@ -94,6 +94,25 @@ function setupEventListeners() {
 function setupDraggablePanels() {
     makePanelDraggable(playerPanel);
     makePanelDraggable(imagePanel);
+    setupResizeObserver();
+}
+
+// Setup Resize Observer for responsive video scaling
+function setupResizeObserver() {
+    // Observe video player panel resize
+    const resizeObserver = new ResizeObserver(entries => {
+        for (let entry of entries) {
+            if (entry.target === playerPanel && !playerPanel.classList.contains('hidden')) {
+                // Trigger video player resize
+                if (player && player.elements && player.elements.container) {
+                    const event = new Event('resize');
+                    window.dispatchEvent(event);
+                }
+            }
+        }
+    });
+
+    resizeObserver.observe(playerPanel);
 }
 
 // Make Panel Draggable
@@ -464,9 +483,38 @@ function openImageLightbox(file) {
 
 // Show Image in Lightbox
 function showImageInLightbox(file) {
-    const imageUrl = `http://localhost:3000/api/media/${encodeURIComponent(file.path)}`;
+    const thumbnailUrl = `http://localhost:3000/api/thumbnail/image/${encodeURIComponent(file.path)}`;
+    const fullImageUrl = `http://localhost:3000/api/media/${encodeURIComponent(file.path)}`;
 
-    lightboxImage.src = imageUrl;
+    // Add loading indicator
+    const wrapper = lightboxImage.parentElement;
+    let loadingIndicator = wrapper.querySelector('.image-loading-indicator');
+    if (!loadingIndicator) {
+        loadingIndicator = document.createElement('div');
+        loadingIndicator.className = 'image-loading-indicator';
+        loadingIndicator.innerHTML = '⏳';
+        wrapper.appendChild(loadingIndicator);
+    }
+    loadingIndicator.style.display = 'block';
+
+    // Load thumbnail first for quick preview
+    lightboxImage.classList.add('loading');
+    lightboxImage.src = thumbnailUrl;
+
+    // Then load full resolution image
+    const fullImage = new Image();
+    fullImage.onload = () => {
+        lightboxImage.src = fullImageUrl;
+        lightboxImage.classList.remove('loading');
+        loadingIndicator.style.display = 'none';
+    };
+    fullImage.onerror = () => {
+        // If full image fails, keep the thumbnail
+        lightboxImage.classList.remove('loading');
+        loadingIndicator.style.display = 'none';
+    };
+    fullImage.src = fullImageUrl;
+
     lightboxFileName.textContent = file.name;
     lightboxInfo.innerHTML = `
         <strong>Path:</strong> ${file.relativePath}<br>
