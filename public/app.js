@@ -188,13 +188,20 @@ function setupPlyrPlayer() {
             selected: 1,
             options: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3]
         },
-        ratio: '16:9',
         loadSprite: true,
         iconUrl: 'https://cdn.plyr.io/3.7.8/plyr.svg',
         // Performance optimizations
         preload: 'metadata',
         autopause: true,
-        resetOnEnd: true
+        resetOnEnd: true,
+        // Disable ratio to allow video to fill container
+        ratio: null,
+        // Fill the container
+        fullscreen: {
+            enabled: true,
+            fallback: true,
+            iosNative: false
+        }
     });
 
     // Save playback position
@@ -572,6 +579,15 @@ function playVideo(file) {
     // Show player panel
     playerPanel.classList.remove('hidden');
     playerPanel.classList.remove('minimized');
+
+    // Force resize after showing to ensure proper sizing
+    setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+        if (player && player.elements && player.elements.container) {
+            // Trigger Plyr to recalculate dimensions
+            player.toggleControls(true);
+        }
+    }, 100);
 
     // Play after load
     player.play();
