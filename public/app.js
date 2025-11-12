@@ -5,6 +5,8 @@ let currentFilter = 'all';
 let player = null;
 let currentImageIndex = 0;
 let imageFiles = [];
+let currentVideoIndex = -1;
+let videoFiles = [];
 
 // DOM Elements
 const directoryInput = document.getElementById('directoryInput');
@@ -25,6 +27,8 @@ const minimizePlayerBtn = document.getElementById('minimizePlayer');
 const videoPlayer = document.getElementById('videoPlayer');
 const currentFileName = document.getElementById('currentFileName');
 const fileInfo = document.getElementById('fileInfo');
+const loopVideoCheckbox = document.getElementById('loopVideo');
+const autoplayNextCheckbox = document.getElementById('autoplayNext');
 
 // Image Viewer Panel elements
 const imagePanel = document.getElementById('imagePanel');
@@ -47,6 +51,12 @@ function init() {
     if (savedDirectory) {
         directoryInput.value = savedDirectory;
     }
+
+    // Restore autoplay preference
+    const autoplayPref = localStorage.getItem('autoplayNext');
+    if (autoplayPref !== null) {
+        autoplayNextCheckbox.checked = autoplayPref === 'true';
+    }
 }
 
 // Setup Event Listeners
@@ -57,6 +67,13 @@ function setupEventListeners() {
     // Video Player Panel controls
     closePlayerBtn.addEventListener('click', closePlayer);
     minimizePlayerBtn.addEventListener('click', () => toggleMinimize(playerPanel));
+
+    // Video playback options
+    loopVideoCheckbox.addEventListener('change', handleLoopChange);
+    autoplayNextCheckbox.addEventListener('change', () => {
+        // Save preference
+        localStorage.setItem('autoplayNext', autoplayNextCheckbox.checked);
+    });
 
     // Image Viewer Panel controls
     closeLightboxBtn.addEventListener('click', closeLightbox);
@@ -220,6 +237,53 @@ function setupPlyrPlayer() {
             player.currentTime = parseFloat(savedTime);
         }
     });
+
+    // Handle video ended event
+    player.on('ended', handleVideoEnded);
+}
+
+// Handle loop checkbox change
+function handleLoopChange() {
+    if (player) {
+        player.loop = loopVideoCheckbox.checked;
+    }
+}
+
+// Handle video ended event
+function handleVideoEnded() {
+    // If loop is enabled, the player will handle it automatically
+    if (loopVideoCheckbox.checked) {
+        return;
+    }
+
+    // If autoplay next is enabled, play next video
+    if (autoplayNextCheckbox.checked) {
+        playNextVideo();
+    }
+}
+
+// Play next video in the list
+function playNextVideo() {
+    if (videoFiles.length === 0) return;
+
+    currentVideoIndex = (currentVideoIndex + 1) % videoFiles.length;
+    const nextVideo = videoFiles[currentVideoIndex];
+
+    if (nextVideo) {
+        playVideo(nextVideo);
+    }
+}
+
+// Play previous video in the list
+function playPreviousVideo() {
+    if (videoFiles.length === 0) return;
+
+    currentVideoIndex = (currentVideoIndex - 1 + videoFiles.length) % videoFiles.length;
+    const prevVideo = videoFiles[currentVideoIndex];
+
+    if (prevVideo) {
+        playVideo(prevVideo);
+    }
 }
 
 // Scan Directory
@@ -490,7 +554,6 @@ function openImageLightbox(file) {
 
 // Show Image in Lightbox
 function showImageInLightbox(file) {
-    const thumbnailUrl = `http://localhost:3000/api/thumbnail/image/${encodeURIComponent(file.path)}`;
     const fullImageUrl = `http://localhost:3000/api/media/${encodeURIComponent(file.path)}`;
 
     // Add loading indicator
@@ -504,11 +567,11 @@ function showImageInLightbox(file) {
     }
     loadingIndicator.style.display = 'block';
 
-    // Load thumbnail first for quick preview
+    // Clear current image and show loading state
+    lightboxImage.src = '';
     lightboxImage.classList.add('loading');
-    lightboxImage.src = thumbnailUrl;
 
-    // Then load full resolution image
+    // Load full resolution image directly (no thumbnail)
     const fullImage = new Image();
     fullImage.onload = () => {
         lightboxImage.src = fullImageUrl;
@@ -516,9 +579,12 @@ function showImageInLightbox(file) {
         loadingIndicator.style.display = 'none';
     };
     fullImage.onerror = () => {
-        // If full image fails, keep the thumbnail
+        // If full image fails, show error
         lightboxImage.classList.remove('loading');
-        loadingIndicator.style.display = 'none';
+        loadingIndicator.innerHTML = '❌ Failed to load image';
+        setTimeout(() => {
+            loadingIndicator.style.display = 'none';
+        }, 3000);
     };
     fullImage.src = fullImageUrl;
 
@@ -559,6 +625,14 @@ function showNextImage() {
 function playVideo(file) {
     const mediaUrl = `http://localhost:3000/api/media/${encodeURIComponent(file.path)}`;
 
+    // Get all video/audio files from filtered files and set current index
+    videoFiles = filteredFiles.filter(f => f.type === 'video' || f.type === 'audio');
+    currentVideoIndex = videoFiles.findIndex(f => f.path === file.path);
+
+    if (currentVideoIndex === -1) {
+        currentVideoIndex = 0;
+    }
+
     // Update player
     const source = videoPlayer.querySelector('source');
     const contentType = getContentType(file.name);
@@ -573,12 +647,18 @@ function playVideo(file) {
     fileInfo.innerHTML = `
         <strong>Path:</strong> ${file.relativePath}<br>
         <strong>Size:</strong> ${formatFileSize(file.size)}<br>
-        <strong>Modified:</strong> ${new Date(file.modified).toLocaleString()}
+        <strong>Modified:</strong> ${new Date(file.modified).toLocaleString()}<br>
+        <strong>Video ${currentVideoIndex + 1} of ${videoFiles.length}</strong>
     `;
 
     // Show player panel
     playerPanel.classList.remove('hidden');
     playerPanel.classList.remove('minimized');
+
+    // Update loop state from checkbox
+    if (player) {
+        player.loop = loopVideoCheckbox.checked;
+    }
 
     // Force resize after showing to ensure proper sizing
     setTimeout(() => {
