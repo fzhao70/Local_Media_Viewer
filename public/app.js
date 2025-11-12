@@ -46,6 +46,7 @@ const mediaGrid = document.getElementById('mediaGrid');
 const searchInput = document.getElementById('searchInput');
 const filterBtns = document.querySelectorAll('.filter-btn');
 const preGenerateThumbnailsCheckbox = document.getElementById('preGenerateThumbnails');
+const useHardwareAccelerationCheckbox = document.getElementById('useHardwareAcceleration');
 const thumbnailProgress = document.getElementById('thumbnailProgress');
 const progressFill = document.getElementById('progressFill');
 const progressText = document.getElementById('progressText');
@@ -96,6 +97,12 @@ function init() {
     const autoplayPref = localStorage.getItem('autoplayNext');
     if (autoplayPref !== null) {
         autoplayNextCheckbox.checked = autoplayPref === 'true';
+    }
+
+    // Restore hardware acceleration preference from localStorage
+    const hwAccelPref = localStorage.getItem('useHardwareAcceleration');
+    if (hwAccelPref !== null) {
+        useHardwareAccelerationCheckbox.checked = hwAccelPref === 'true';
     }
 }
 
@@ -157,6 +164,12 @@ function setupEventListeners() {
         if (e.key === 'Enter') {
             scanDirectory();
         }
+    });
+
+    // Save hardware acceleration preference
+    useHardwareAccelerationCheckbox.addEventListener('change', () => {
+        // Save preference to localStorage for persistence
+        localStorage.setItem('useHardwareAcceleration', useHardwareAccelerationCheckbox.checked);
     });
 }
 
@@ -625,9 +638,12 @@ function generateImageThumbnail(file, container) {
  * Requests a video thumbnail from the server (generated using FFmpeg at 10% timestamp).
  * Thumbnails are cached on the server for faster subsequent loads.
  * Adds a play icon overlay to indicate it's a video.
+ * Uses hardware acceleration if enabled for faster processing.
  */
 function generateVideoThumbnail(file, container) {
-    const thumbnailUrl = `http://localhost:3000/api/thumbnail/video/${encodeURIComponent(file.path)}`;
+    // Add hardware acceleration query parameter if enabled
+    const hwAccelParam = useHardwareAccelerationCheckbox.checked ? '?hwaccel=true' : '';
+    const thumbnailUrl = `http://localhost:3000/api/thumbnail/video/${encodeURIComponent(file.path)}${hwAccelParam}`;
 
     // Show loading indicator while thumbnail is being generated/loaded
     const icon = getMediaIcon(file.type);
@@ -981,7 +997,10 @@ async function generateThumbnails(files) {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ files })
+            body: JSON.stringify({
+                files,
+                useHardwareAcceleration: useHardwareAccelerationCheckbox.checked
+            })
         });
 
         if (!response.ok) {
