@@ -19,6 +19,10 @@ const mediaSection = document.getElementById('mediaSection');
 const mediaGrid = document.getElementById('mediaGrid');
 const searchInput = document.getElementById('searchInput');
 const filterBtns = document.querySelectorAll('.filter-btn');
+const preGenerateThumbnailsCheckbox = document.getElementById('preGenerateThumbnails');
+const thumbnailProgress = document.getElementById('thumbnailProgress');
+const progressFill = document.getElementById('progressFill');
+const progressText = document.getElementById('progressText');
 
 // Video Player Panel elements
 const playerPanel = document.getElementById('playerPanel');
@@ -334,6 +338,11 @@ async function scanDirectory() {
         mediaSection.classList.remove('hidden');
 
         showStatus(`Found ${data.count} media files`, 'success');
+
+        // Pre-generate thumbnails if option is checked
+        if (preGenerateThumbnailsCheckbox.checked) {
+            await generateThumbnails(data.files);
+        }
     } catch (error) {
         showStatus(error.message, 'error');
         console.error('Scan error:', error);
@@ -726,6 +735,68 @@ function applyFilters() {
 // Handle Search
 function handleSearch() {
     applyFilters();
+}
+
+// Generate thumbnails for all images
+async function generateThumbnails(files) {
+    // Show progress bar
+    thumbnailProgress.classList.remove('hidden');
+    progressFill.style.width = '0%';
+    progressText.textContent = 'Generating thumbnails...';
+
+    try {
+        const response = await fetch('http://localhost:3000/api/generate-thumbnails', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ files })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to generate thumbnails');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const text = decoder.decode(value);
+            const lines = text.split('\n').filter(line => line.trim());
+
+            for (const line of lines) {
+                try {
+                    const update = JSON.parse(line);
+
+                    if (update.complete) {
+                        // Final results
+                        progressFill.style.width = '100%';
+                        progressText.textContent = `Complete! Generated: ${update.results.generated}, Cached: ${update.results.cached}, Skipped: ${update.results.skipped}`;
+
+                        // Hide progress bar after delay
+                        setTimeout(() => {
+                            thumbnailProgress.classList.add('hidden');
+                        }, 3000);
+                    } else {
+                        // Progress update
+                        progressFill.style.width = `${update.progress}%`;
+                        progressText.textContent = `Processing ${update.current}/${update.total}: ${update.file} (${update.status})`;
+                    }
+                } catch (e) {
+                    console.error('Error parsing progress update:', e);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Thumbnail generation error:', error);
+        progressText.textContent = 'Error generating thumbnails';
+        setTimeout(() => {
+            thumbnailProgress.classList.add('hidden');
+        }, 3000);
+    }
 }
 
 // Show Status Message

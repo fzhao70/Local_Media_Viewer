@@ -38,6 +38,18 @@
                 <br>
                 <strong>FTPS:</strong> ftps://username:password@ftp.example.com:990/media
             </div>
+            <div class="scan-options">
+                <label class="option-label">
+                    <input type="checkbox" id="preGenerateThumbnails" class="option-checkbox">
+                    <span>Pre-generate all thumbnails (faster browsing, cached for future use)</span>
+                </label>
+            </div>
+            <div id="thumbnailProgress" class="thumbnail-progress hidden">
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+                <p id="progressText" class="progress-text">Generating thumbnails...</p>
+            </div>
             <div id="statusMessage" class="status-message"></div>
         </section>
 

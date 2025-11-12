@@ -80,6 +80,37 @@ header h1 {
     font-weight: 600;
 }
 
+.scan-options {
+    margin-bottom: 1rem;
+}
+
+.thumbnail-progress {
+    margin-bottom: 1rem;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary-color), var(--primary-hover));
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+.progress-text {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-align: center;
+    margin: 0;
+}
+
 .directory-input {
     flex: 1;
     padding: 0.875rem 1.25rem;
