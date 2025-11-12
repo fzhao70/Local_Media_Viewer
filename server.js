@@ -74,12 +74,32 @@ async function saveThumbnailToCache(filePath, modifiedTime, thumbnailBuffer) {
 }
 
 // Generate video thumbnail using ffmpeg
-async function generateVideoThumbnail(videoPath) {
+async function generateVideoThumbnail(videoPath, useHardwareAcceleration = false) {
   return new Promise((resolve, reject) => {
     const tempFilename = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
     const tempPath = path.join(os.tmpdir(), tempFilename);
 
-    ffmpeg(videoPath)
+    const command = ffmpeg(videoPath);
+
+    // Add hardware acceleration if requested
+    if (useHardwareAcceleration) {
+      // Try to use hardware acceleration with automatic detection
+      // FFmpeg will fall back to software decoding if hardware acceleration fails
+      const platform = os.platform();
+
+      if (platform === 'darwin') {
+        // macOS - use VideoToolbox
+        command.inputOptions(['-hwaccel videotoolbox']);
+      } else if (platform === 'win32') {
+        // Windows - try NVIDIA first, then Intel QSV, then AMD AMF
+        command.inputOptions(['-hwaccel auto']);
+      } else {
+        // Linux - try VAAPI, then VDPAU, then auto
+        command.inputOptions(['-hwaccel auto']);
+      }
+    }
+
+    command
       .screenshots({
         count: 1,
         folder: os.tmpdir(),
@@ -110,7 +130,13 @@ async function generateVideoThumbnail(videoPath) {
         }
       })
       .on('error', (error) => {
-        reject(error);
+        // If hardware acceleration fails, retry without it
+        if (useHardwareAcceleration) {
+          console.warn('Hardware acceleration failed, retrying with software decoding:', error.message);
+          generateVideoThumbnail(videoPath, false).then(resolve).catch(reject);
+        } else {
+          reject(error);
+        }
       });
   });
 }
@@ -465,6 +491,7 @@ app.get('/api/thumbnail/image/*', async (req, res) => {
 // Serve video thumbnails
 app.get('/api/thumbnail/video/*', async (req, res) => {
   const filePath = decodeURIComponent(req.params[0]);
+  const useHardwareAcceleration = req.query.hwaccel === 'true';
 
   try {
     // Get file modified time for cache validation
@@ -498,10 +525,10 @@ app.get('/api/thumbnail/video/*', async (req, res) => {
       const client = await getFtpConnection(ftpConfig);
 
       await client.downloadTo(require('fs').createWriteStream(tempVideoPath), ftpConfig.path);
-      thumbnail = await generateVideoThumbnail(tempVideoPath);
+      thumbnail = await generateVideoThumbnail(tempVideoPath, useHardwareAcceleration);
       await fs.unlink(tempVideoPath);
     } else {
-      thumbnail = await generateVideoThumbnail(filePath);
+      thumbnail = await generateVideoThumbnail(filePath, useHardwareAcceleration);
     }
 
     // Save to cache
@@ -517,7 +544,7 @@ app.get('/api/thumbnail/video/*', async (req, res) => {
 
 // Bulk generate thumbnails for all images
 app.post('/api/generate-thumbnails', async (req, res) => {
-  const { files } = req.body;
+  const { files, useHardwareAcceleration = false } = req.body;
 
   if (!files || !Array.isArray(files)) {
     return res.status(400).json({ error: 'Files array is required' });
@@ -582,7 +609,7 @@ app.post('/api/generate-thumbnails', async (req, res) => {
           await client.downloadTo(require('fs').createWriteStream(tempVideoPath), ftpConfig.path);
 
           // Generate thumbnail from temp file
-          thumbnail = await generateVideoThumbnail(tempVideoPath);
+          thumbnail = await generateVideoThumbnail(tempVideoPath, useHardwareAcceleration);
 
           // Clean up temp video file
           await fs.unlink(tempVideoPath);
@@ -591,7 +618,7 @@ app.post('/api/generate-thumbnails', async (req, res) => {
             results.errors.push({ file: file.name, error: 'File not found' });
             continue;
           }
-          thumbnail = await generateVideoThumbnail(file.path);
+          thumbnail = await generateVideoThumbnail(file.path, useHardwareAcceleration);
         }
       }
       // Handle image files
