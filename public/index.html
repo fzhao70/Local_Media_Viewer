@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Media Viewer</title>
+
+    <!-- Plyr CSS -->
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📁 Local Media Viewer</h1>
+            <p class="subtitle">Browse and play media files from your local directories</p>
+        </header>
+
+        <!-- Directory Selection Section -->
+        <section class="directory-section">
+            <div class="input-group">
+                <input
+                    type="text"
+                    id="directoryInput"
+                    placeholder="Enter directory path (e.g., /home/user/Videos or C:\Users\YourName\Videos)"
+                    class="directory-input"
+                >
+                <button id="scanBtn" class="btn btn-primary">
+                    Scan Directory
+                </button>
+            </div>
+            <div id="statusMessage" class="status-message"></div>
+        </section>
+
+        <!-- Media Stats -->
+        <section id="statsSection" class="stats-section hidden">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalFiles">0</div>
+                    <div class="stat-label">Total Media Files</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="videoCount">0</div>
+                    <div class="stat-label">Videos</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="imageCount">0</div>
+                    <div class="stat-label">Images</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="audioCount">0</div>
+                    <div class="stat-label">Audio</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Filter Section -->
+        <section id="filterSection" class="filter-section hidden">
+            <div class="filter-controls">
+                <button class="filter-btn active" data-filter="all">All</button>
+                <button class="filter-btn" data-filter="video">Videos</button>
+                <button class="filter-btn" data-filter="image">Images</button>
+                <button class="filter-btn" data-filter="audio">Audio</button>
+            </div>
+            <input type="text" id="searchInput" placeholder="Search files..." class="search-input">
+        </section>
+
+        <!-- Video Player Section -->
+        <section id="playerSection" class="player-section hidden">
+            <div class="player-header">
+                <h2 id="currentFileName">No media selected</h2>
+                <button id="closePlayer" class="btn btn-close">✕</button>
+            </div>
+            <div class="player-wrapper">
+                <video id="videoPlayer" controls playsinline>
+                    <source src="" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+            <div class="player-info">
+                <p id="fileInfo"></p>
+            </div>
+        </section>
+
+        <!-- Media Grid -->
+        <section id="mediaSection" class="media-section hidden">
+            <div id="mediaGrid" class="media-grid">
+                <!-- Media items will be inserted here -->
+            </div>
+        </section>
+
+        <!-- Loading Spinner -->
+        <div id="loadingSpinner" class="loading-spinner hidden">
+            <div class="spinner"></div>
+            <p>Scanning directory...</p>
+        </div>
+    </div>
+
+    <!-- Plyr JS -->
+    <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+
+    <!-- Custom JS -->
+    <script src="app.js"></script>
+</body>
+</html>
