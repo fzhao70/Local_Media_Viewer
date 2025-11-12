@@ -4,9 +4,13 @@ const fs = require('fs').promises;
 const path = require('path');
 const { existsSync, statSync } = require('fs');
 const sharp = require('sharp');
+const { Client: FtpClient } = require('basic-ftp');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// FTP connection cache
+const ftpConnections = new Map();
 
 // Middleware
 app.use(cors());
@@ -19,6 +23,57 @@ const MEDIA_EXTENSIONS = {
   image: ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg'],
   audio: ['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac']
 };
+
+// Helper function to get or create FTP connection
+async function getFtpConnection(ftpConfig) {
+  const key = `${ftpConfig.host}:${ftpConfig.port}:${ftpConfig.user}`;
+
+  let connection = ftpConnections.get(key);
+  if (connection && !connection.closed) {
+    return connection;
+  }
+
+  const client = new FtpClient();
+  client.ftp.verbose = false;
+
+  try {
+    await client.access({
+      host: ftpConfig.host,
+      port: ftpConfig.port || 21,
+      user: ftpConfig.user || 'anonymous',
+      password: ftpConfig.password || '',
+      secure: ftpConfig.secure || false
+    });
+
+    ftpConnections.set(key, client);
+    return client;
+  } catch (error) {
+    console.error('FTP connection error:', error);
+    throw error;
+  }
+}
+
+// Parse FTP path format: ftp://user:pass@host:port/path
+function parseFtpPath(ftpPath) {
+  try {
+    const url = new URL(ftpPath);
+    return {
+      host: url.hostname,
+      port: url.port ? parseInt(url.port) : 21,
+      user: url.username || 'anonymous',
+      password: url.password || '',
+      path: url.pathname || '/',
+      secure: url.protocol === 'ftps:'
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+// Check if path is FTP
+function isFtpPath(path) {
+  return path && (path.startsWith('ftp://') || path.startsWith('ftps://'));
+}
 
 // Check if file is a media file
 function isMediaFile(filename) {
@@ -59,12 +114,57 @@ async function getMediaFilesRecursive(dirPath, baseDir = dirPath) {
           relativePath: path.relative(baseDir, fullPath),
           size: stats.size,
           modified: stats.mtime,
-          type: getMediaType(entry.name)
+          type: getMediaType(entry.name),
+          source: 'local'
         });
       }
     }
   } catch (error) {
     console.error(`Error reading directory ${dirPath}:`, error.message);
+  }
+
+  return files;
+}
+
+// Recursively get all media files from FTP directory
+async function getMediaFilesFromFtp(ftpConfig, basePath = '/') {
+  const files = [];
+
+  try {
+    const client = await getFtpConnection(ftpConfig);
+
+    async function scanDirectory(dirPath) {
+      try {
+        const list = await client.list(dirPath);
+
+        for (const item of list) {
+          const itemPath = path.posix.join(dirPath, item.name);
+
+          if (item.isDirectory) {
+            // Recursively scan subdirectories
+            await scanDirectory(itemPath);
+          } else if (item.isFile && isMediaFile(item.name)) {
+            files.push({
+              name: item.name,
+              path: `ftp://${ftpConfig.user}@${ftpConfig.host}:${ftpConfig.port}${itemPath}`,
+              relativePath: path.posix.relative(basePath, itemPath),
+              size: item.size,
+              modified: item.modifiedAt || new Date(),
+              type: getMediaType(item.name),
+              source: 'ftp',
+              ftpConfig: ftpConfig
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`Error reading FTP directory ${dirPath}:`, error.message);
+      }
+    }
+
+    await scanDirectory(ftpConfig.path);
+  } catch (error) {
+    console.error('FTP scan error:', error);
+    throw error;
   }
 
   return files;
@@ -78,19 +178,30 @@ app.post('/api/scan-directory', async (req, res) => {
     return res.status(400).json({ error: 'Directory path is required' });
   }
 
-  // Check if directory exists
-  if (!existsSync(directory)) {
-    return res.status(404).json({ error: 'Directory not found' });
-  }
-
-  // Check if it's actually a directory
-  const stats = statSync(directory);
-  if (!stats.isDirectory()) {
-    return res.status(400).json({ error: 'Path is not a directory' });
-  }
-
   try {
-    const mediaFiles = await getMediaFilesRecursive(directory);
+    let mediaFiles;
+
+    // Check if it's an FTP path
+    if (isFtpPath(directory)) {
+      const ftpConfig = parseFtpPath(directory);
+      if (!ftpConfig) {
+        return res.status(400).json({ error: 'Invalid FTP path format. Use: ftp://user:pass@host:port/path' });
+      }
+      mediaFiles = await getMediaFilesFromFtp(ftpConfig);
+    } else {
+      // Local filesystem
+      if (!existsSync(directory)) {
+        return res.status(404).json({ error: 'Directory not found' });
+      }
+
+      const stats = statSync(directory);
+      if (!stats.isDirectory()) {
+        return res.status(400).json({ error: 'Path is not a directory' });
+      }
+
+      mediaFiles = await getMediaFilesRecursive(directory);
+    }
+
     res.json({
       directory,
       count: mediaFiles.length,
@@ -102,41 +213,63 @@ app.post('/api/scan-directory', async (req, res) => {
 });
 
 // Serve media files
-app.get('/api/media/*', (req, res) => {
+app.get('/api/media/*', async (req, res) => {
   const filePath = decodeURIComponent(req.params[0]);
 
-  if (!existsSync(filePath)) {
-    return res.status(404).json({ error: 'File not found' });
-  }
+  try {
+    // Check if it's an FTP path
+    if (isFtpPath(filePath)) {
+      const ftpConfig = parseFtpPath(filePath);
+      if (!ftpConfig) {
+        return res.status(400).json({ error: 'Invalid FTP path' });
+      }
 
-  // Set appropriate headers for video streaming
-  const stat = statSync(filePath);
-  const fileSize = stat.size;
-  const range = req.headers.range;
+      const client = await getFtpConnection(ftpConfig);
+      const tempStream = require('stream').PassThrough();
 
-  if (range) {
-    // Handle range requests for video seeking
-    const parts = range.replace(/bytes=/, '').split('-');
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-    const chunksize = (end - start) + 1;
-    const file = require('fs').createReadStream(filePath, { start, end });
-    const head = {
-      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-      'Accept-Ranges': 'bytes',
-      'Content-Length': chunksize,
-      'Content-Type': getContentType(filePath),
-    };
-    res.writeHead(206, head);
-    file.pipe(res);
-  } else {
-    // Send entire file
-    const head = {
-      'Content-Length': fileSize,
-      'Content-Type': getContentType(filePath),
-    };
-    res.writeHead(200, head);
-    require('fs').createReadStream(filePath).pipe(res);
+      // Download file from FTP
+      await client.downloadTo(tempStream, ftpConfig.path);
+
+      res.set('Content-Type', getContentType(filePath));
+      tempStream.pipe(res);
+    } else {
+      // Local file
+      if (!existsSync(filePath)) {
+        return res.status(404).json({ error: 'File not found' });
+      }
+
+      const stat = statSync(filePath);
+      const fileSize = stat.size;
+      const range = req.headers.range;
+
+      if (range) {
+        // Handle range requests for video seeking
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        const chunksize = (end - start) + 1;
+        const file = require('fs').createReadStream(filePath, { start, end });
+        const head = {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunksize,
+          'Content-Type': getContentType(filePath),
+        };
+        res.writeHead(206, head);
+        file.pipe(res);
+      } else {
+        // Send entire file
+        const head = {
+          'Content-Length': fileSize,
+          'Content-Type': getContentType(filePath),
+        };
+        res.writeHead(200, head);
+        require('fs').createReadStream(filePath).pipe(res);
+      }
+    }
+  } catch (error) {
+    console.error('Error serving media:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -144,29 +277,49 @@ app.get('/api/media/*', (req, res) => {
 app.get('/api/thumbnail/image/*', async (req, res) => {
   const filePath = decodeURIComponent(req.params[0]);
 
-  if (!existsSync(filePath)) {
-    return res.status(404).json({ error: 'File not found' });
-  }
-
   try {
     const ext = path.extname(filePath).toLowerCase();
+    let imageBuffer;
+
+    // Get image buffer from FTP or local file
+    if (isFtpPath(filePath)) {
+      const ftpConfig = parseFtpPath(filePath);
+      if (!ftpConfig) {
+        return res.status(400).json({ error: 'Invalid FTP path' });
+      }
+
+      const client = await getFtpConnection(ftpConfig);
+      const chunks = [];
+      const writableStream = require('stream').Writable({
+        write(chunk, encoding, callback) {
+          chunks.push(chunk);
+          callback();
+        }
+      });
+
+      await client.downloadTo(writableStream, ftpConfig.path);
+      imageBuffer = Buffer.concat(chunks);
+    } else {
+      if (!existsSync(filePath)) {
+        return res.status(404).json({ error: 'File not found' });
+      }
+      imageBuffer = await fs.readFile(filePath);
+    }
 
     // For SVG, serve directly without processing
     if (ext === '.svg') {
       res.set('Content-Type', 'image/svg+xml');
-      const svgBuffer = await fs.readFile(filePath);
-      return res.send(svgBuffer);
+      return res.send(imageBuffer);
     }
 
     // For GIF, serve directly to preserve animation
     if (ext === '.gif') {
       res.set('Content-Type', 'image/gif');
-      const gifBuffer = await fs.readFile(filePath);
-      return res.send(gifBuffer);
+      return res.send(imageBuffer);
     }
 
     // Generate thumbnail for other image formats (low resolution for performance)
-    const thumbnail = await sharp(filePath)
+    const thumbnail = await sharp(imageBuffer)
       .resize(200, 150, {
         fit: 'cover',
         position: 'center'
