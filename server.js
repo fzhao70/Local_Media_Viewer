@@ -6,6 +6,8 @@ const { existsSync, statSync } = require('fs');
 const sharp = require('sharp');
 const { Client: FtpClient } = require('basic-ftp');
 const crypto = require('crypto');
+const ffmpeg = require('fluent-ffmpeg');
+const os = require('os');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -69,6 +71,48 @@ async function saveThumbnailToCache(filePath, modifiedTime, thumbnailBuffer) {
   } catch (error) {
     console.error('Error saving thumbnail to cache:', error);
   }
+}
+
+// Generate video thumbnail using ffmpeg
+async function generateVideoThumbnail(videoPath) {
+  return new Promise((resolve, reject) => {
+    const tempFilename = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
+    const tempPath = path.join(os.tmpdir(), tempFilename);
+
+    ffmpeg(videoPath)
+      .screenshots({
+        count: 1,
+        folder: os.tmpdir(),
+        filename: tempFilename,
+        timestamps: ['10%'],
+        size: '400x300'
+      })
+      .on('end', async () => {
+        try {
+          // Read the generated screenshot
+          const screenshotBuffer = await fs.readFile(tempPath);
+
+          // Resize to thumbnail size using sharp
+          const thumbnail = await sharp(screenshotBuffer)
+            .resize(200, 150, {
+              fit: 'cover',
+              position: 'center'
+            })
+            .jpeg({ quality: 60 })
+            .toBuffer();
+
+          // Clean up temp file
+          await fs.unlink(tempPath);
+
+          resolve(thumbnail);
+        } catch (error) {
+          reject(error);
+        }
+      })
+      .on('error', (error) => {
+        reject(error);
+      });
+  });
 }
 
 ensureThumbnailCacheDir();
@@ -418,18 +462,57 @@ app.get('/api/thumbnail/image/*', async (req, res) => {
   }
 });
 
-// Endpoint to generate video thumbnail (returns video URL for client-side generation)
-app.post('/api/thumbnail/video', (req, res) => {
-  const { filePath } = req.body;
+// Serve video thumbnails
+app.get('/api/thumbnail/video/*', async (req, res) => {
+  const filePath = decodeURIComponent(req.params[0]);
 
-  if (!filePath || !existsSync(filePath)) {
-    return res.status(404).json({ error: 'File not found' });
+  try {
+    // Get file modified time for cache validation
+    let modifiedTime;
+    if (isFtpPath(filePath)) {
+      modifiedTime = new Date();
+    } else {
+      if (!existsSync(filePath)) {
+        return res.status(404).json({ error: 'File not found' });
+      }
+      const stats = statSync(filePath);
+      modifiedTime = stats.mtime;
+    }
+
+    // Check cache first
+    const cachedThumbnail = await getCachedThumbnail(filePath, modifiedTime);
+    if (cachedThumbnail) {
+      res.set('Content-Type', 'image/jpeg');
+      return res.send(cachedThumbnail);
+    }
+
+    // Generate new thumbnail
+    let thumbnail;
+    if (isFtpPath(filePath)) {
+      const ftpConfig = parseFtpPath(filePath);
+      if (!ftpConfig) {
+        return res.status(400).json({ error: 'Invalid FTP path' });
+      }
+
+      const tempVideoPath = path.join(os.tmpdir(), `video_${Date.now()}_${path.basename(filePath)}`);
+      const client = await getFtpConnection(ftpConfig);
+
+      await client.downloadTo(require('fs').createWriteStream(tempVideoPath), ftpConfig.path);
+      thumbnail = await generateVideoThumbnail(tempVideoPath);
+      await fs.unlink(tempVideoPath);
+    } else {
+      thumbnail = await generateVideoThumbnail(filePath);
+    }
+
+    // Save to cache
+    await saveThumbnailToCache(filePath, modifiedTime, thumbnail);
+
+    res.set('Content-Type', 'image/jpeg');
+    res.send(thumbnail);
+  } catch (error) {
+    console.error('Video thumbnail generation error:', error);
+    res.status(500).json({ error: 'Failed to generate video thumbnail' });
   }
-
-  // Return the media URL for client-side thumbnail generation
-  res.json({
-    mediaUrl: `/api/media/${encodeURIComponent(filePath)}`
-  });
 });
 
 // Bulk generate thumbnails for all images
@@ -455,20 +538,14 @@ app.post('/api/generate-thumbnails', async (req, res) => {
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
 
-    // Only process images (not videos or audio)
-    if (file.type !== 'image') {
+    // Skip audio files
+    if (file.type === 'audio') {
       results.skipped++;
       continue;
     }
 
     try {
       const ext = path.extname(file.path).toLowerCase();
-
-      // Skip SVG and GIF
-      if (ext === '.svg' || ext === '.gif') {
-        results.skipped++;
-        continue;
-      }
 
       // Check if cached thumbnail already exists
       const modifiedTime = new Date(file.modified);
@@ -487,42 +564,81 @@ app.post('/api/generate-thumbnails', async (req, res) => {
         continue;
       }
 
-      // Get image buffer
-      let imageBuffer;
-      if (isFtpPath(file.path)) {
-        const ftpConfig = parseFtpPath(file.path);
-        if (!ftpConfig) {
-          results.errors.push({ file: file.name, error: 'Invalid FTP path' });
-          continue;
-        }
+      let thumbnail;
 
-        const client = await getFtpConnection(ftpConfig);
-        const chunks = [];
-        const writableStream = require('stream').Writable({
-          write(chunk, encoding, callback) {
-            chunks.push(chunk);
-            callback();
+      // Handle video files
+      if (file.type === 'video') {
+        // For FTP videos, download to temp file first
+        if (isFtpPath(file.path)) {
+          const ftpConfig = parseFtpPath(file.path);
+          if (!ftpConfig) {
+            results.errors.push({ file: file.name, error: 'Invalid FTP path' });
+            continue;
           }
-        });
 
-        await client.downloadTo(writableStream, ftpConfig.path);
-        imageBuffer = Buffer.concat(chunks);
-      } else {
-        if (!existsSync(file.path)) {
-          results.errors.push({ file: file.name, error: 'File not found' });
+          const tempVideoPath = path.join(os.tmpdir(), `video_${Date.now()}_${file.name}`);
+          const client = await getFtpConnection(ftpConfig);
+
+          await client.downloadTo(require('fs').createWriteStream(tempVideoPath), ftpConfig.path);
+
+          // Generate thumbnail from temp file
+          thumbnail = await generateVideoThumbnail(tempVideoPath);
+
+          // Clean up temp video file
+          await fs.unlink(tempVideoPath);
+        } else {
+          if (!existsSync(file.path)) {
+            results.errors.push({ file: file.name, error: 'File not found' });
+            continue;
+          }
+          thumbnail = await generateVideoThumbnail(file.path);
+        }
+      }
+      // Handle image files
+      else if (file.type === 'image') {
+        // Skip SVG and GIF
+        if (ext === '.svg' || ext === '.gif') {
+          results.skipped++;
           continue;
         }
-        imageBuffer = await fs.readFile(file.path);
-      }
 
-      // Generate thumbnail
-      const thumbnail = await sharp(imageBuffer)
-        .resize(200, 150, {
-          fit: 'cover',
-          position: 'center'
-        })
-        .jpeg({ quality: 60 })
-        .toBuffer();
+        // Get image buffer
+        let imageBuffer;
+        if (isFtpPath(file.path)) {
+          const ftpConfig = parseFtpPath(file.path);
+          if (!ftpConfig) {
+            results.errors.push({ file: file.name, error: 'Invalid FTP path' });
+            continue;
+          }
+
+          const client = await getFtpConnection(ftpConfig);
+          const chunks = [];
+          const writableStream = require('stream').Writable({
+            write(chunk, encoding, callback) {
+              chunks.push(chunk);
+              callback();
+            }
+          });
+
+          await client.downloadTo(writableStream, ftpConfig.path);
+          imageBuffer = Buffer.concat(chunks);
+        } else {
+          if (!existsSync(file.path)) {
+            results.errors.push({ file: file.name, error: 'File not found' });
+            continue;
+          }
+          imageBuffer = await fs.readFile(file.path);
+        }
+
+        // Generate thumbnail
+        thumbnail = await sharp(imageBuffer)
+          .resize(200, 150, {
+            fit: 'cover',
+            position: 'center'
+          })
+          .jpeg({ quality: 60 })
+          .toBuffer();
+      }
 
       // Save to cache
       await saveThumbnailToCache(file.path, modifiedTime, thumbnail);
