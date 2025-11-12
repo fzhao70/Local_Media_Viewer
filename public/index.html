@@ -67,34 +67,48 @@
             <input type="text" id="searchInput" placeholder="Search files..." class="search-input">
         </section>
 
-        <!-- Video Player Section -->
-        <section id="playerSection" class="player-section hidden">
-            <div class="player-header">
-                <h2 id="currentFileName">No media selected</h2>
-                <button id="closePlayer" class="btn btn-close">✕</button>
-            </div>
-            <div class="player-wrapper">
-                <video id="videoPlayer" controls playsinline>
-                    <source src="" type="video/mp4">
-                    Your browser does not support the video tag.
-                </video>
-            </div>
-            <div class="player-info">
-                <p id="fileInfo"></p>
-            </div>
-        </section>
-
-        <!-- Image Lightbox -->
-        <div id="imageLightbox" class="lightbox hidden">
-            <div class="lightbox-content">
-                <div class="lightbox-header">
-                    <h2 id="lightboxFileName">Image Viewer</h2>
-                    <button id="closeLightbox" class="btn btn-close">✕</button>
+        <!-- Floating Video Player Panel -->
+        <div id="playerPanel" class="floating-panel hidden" style="width: 600px; height: 450px; top: 100px; left: 100px;">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <span class="panel-icon">🎬</span>
+                    <h3 id="currentFileName">Video Player</h3>
                 </div>
-                <div class="lightbox-image-wrapper">
-                    <button id="prevImage" class="lightbox-nav lightbox-nav-left">‹</button>
+                <div class="panel-controls">
+                    <button id="minimizePlayer" class="panel-btn" title="Minimize">−</button>
+                    <button id="closePlayer" class="panel-btn panel-close">✕</button>
+                </div>
+            </div>
+            <div class="panel-content" id="playerContent">
+                <div class="player-wrapper">
+                    <video id="videoPlayer" controls playsinline>
+                        <source src="" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+                <div class="player-info">
+                    <p id="fileInfo"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Floating Image Viewer Panel -->
+        <div id="imagePanel" class="floating-panel hidden" style="width: 700px; height: 550px; top: 120px; left: 120px;">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <span class="panel-icon">🖼️</span>
+                    <h3 id="lightboxFileName">Image Viewer</h3>
+                </div>
+                <div class="panel-controls">
+                    <button id="prevImage" class="panel-btn" title="Previous">‹</button>
+                    <button id="nextImage" class="panel-btn" title="Next">›</button>
+                    <button id="minimizeImage" class="panel-btn" title="Minimize">−</button>
+                    <button id="closeLightbox" class="panel-btn panel-close">✕</button>
+                </div>
+            </div>
+            <div class="panel-content" id="imageContent">
+                <div class="image-viewer-wrapper">
                     <img id="lightboxImage" src="" alt="Full size image">
-                    <button id="nextImage" class="lightbox-nav lightbox-nav-right">›</button>
                 </div>
                 <div class="lightbox-info">
                     <p id="lightboxInfo"></p>

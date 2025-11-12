@@ -14,18 +14,22 @@ const loadingSpinner = document.getElementById('loadingSpinner');
 const statsSection = document.getElementById('statsSection');
 const filterSection = document.getElementById('filterSection');
 const mediaSection = document.getElementById('mediaSection');
-const playerSection = document.getElementById('playerSection');
 const mediaGrid = document.getElementById('mediaGrid');
 const searchInput = document.getElementById('searchInput');
 const filterBtns = document.querySelectorAll('.filter-btn');
+
+// Video Player Panel elements
+const playerPanel = document.getElementById('playerPanel');
 const closePlayerBtn = document.getElementById('closePlayer');
+const minimizePlayerBtn = document.getElementById('minimizePlayer');
 const videoPlayer = document.getElementById('videoPlayer');
 const currentFileName = document.getElementById('currentFileName');
 const fileInfo = document.getElementById('fileInfo');
 
-// Lightbox elements
-const imageLightbox = document.getElementById('imageLightbox');
+// Image Viewer Panel elements
+const imagePanel = document.getElementById('imagePanel');
 const closeLightboxBtn = document.getElementById('closeLightbox');
+const minimizeImageBtn = document.getElementById('minimizeImage');
 const lightboxImage = document.getElementById('lightboxImage');
 const lightboxFileName = document.getElementById('lightboxFileName');
 const lightboxInfo = document.getElementById('lightboxInfo');
@@ -36,6 +40,7 @@ const nextImageBtn = document.getElementById('nextImage');
 function init() {
     setupEventListeners();
     setupPlyrPlayer();
+    setupDraggablePanels();
 
     // Check for saved directory in localStorage
     const savedDirectory = localStorage.getItem('lastDirectory');
@@ -47,24 +52,21 @@ function init() {
 // Setup Event Listeners
 function setupEventListeners() {
     scanBtn.addEventListener('click', scanDirectory);
-    closePlayerBtn.addEventListener('click', closePlayer);
     searchInput.addEventListener('input', handleSearch);
 
-    // Lightbox controls
+    // Video Player Panel controls
+    closePlayerBtn.addEventListener('click', closePlayer);
+    minimizePlayerBtn.addEventListener('click', () => toggleMinimize(playerPanel));
+
+    // Image Viewer Panel controls
     closeLightboxBtn.addEventListener('click', closeLightbox);
+    minimizeImageBtn.addEventListener('click', () => toggleMinimize(imagePanel));
     prevImageBtn.addEventListener('click', showPreviousImage);
     nextImageBtn.addEventListener('click', showNextImage);
 
-    // Close lightbox on background click
-    imageLightbox.addEventListener('click', (e) => {
-        if (e.target === imageLightbox) {
-            closeLightbox();
-        }
-    });
-
-    // Keyboard navigation for lightbox
+    // Keyboard navigation for image viewer
     document.addEventListener('keydown', (e) => {
-        if (!imageLightbox.classList.contains('hidden')) {
+        if (!imagePanel.classList.contains('hidden')) {
             if (e.key === 'Escape') closeLightbox();
             if (e.key === 'ArrowLeft') showPreviousImage();
             if (e.key === 'ArrowRight') showNextImage();
@@ -86,6 +88,66 @@ function setupEventListeners() {
             scanDirectory();
         }
     });
+}
+
+// Setup Draggable Panels
+function setupDraggablePanels() {
+    makePanelDraggable(playerPanel);
+    makePanelDraggable(imagePanel);
+}
+
+// Make Panel Draggable
+function makePanelDraggable(panel) {
+    const header = panel.querySelector('.panel-header');
+    let isDragging = false;
+    let currentX;
+    let currentY;
+    let initialX;
+    let initialY;
+
+    header.addEventListener('mousedown', dragStart);
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('mouseup', dragEnd);
+
+    function dragStart(e) {
+        // Don't drag if clicking on buttons
+        if (e.target.classList.contains('panel-btn') || e.target.closest('.panel-btn')) {
+            return;
+        }
+
+        initialX = e.clientX - panel.offsetLeft;
+        initialY = e.clientY - panel.offsetTop;
+        isDragging = true;
+        panel.style.zIndex = 1001; // Bring to front
+    }
+
+    function drag(e) {
+        if (!isDragging) return;
+
+        e.preventDefault();
+        currentX = e.clientX - initialX;
+        currentY = e.clientY - initialY;
+
+        // Keep panel within viewport
+        const maxX = window.innerWidth - panel.offsetWidth;
+        const maxY = window.innerHeight - 50; // Keep at least header visible
+
+        currentX = Math.max(0, Math.min(currentX, maxX));
+        currentY = Math.max(0, Math.min(currentY, maxY));
+
+        panel.style.left = currentX + 'px';
+        panel.style.top = currentY + 'px';
+    }
+
+    function dragEnd() {
+        isDragging = false;
+        panel.style.zIndex = 1000;
+    }
+}
+
+// Toggle Minimize Panel
+function toggleMinimize(panel) {
+    panel.classList.toggle('minimized');
 }
 
 // Setup Plyr Player with custom options
@@ -314,8 +376,8 @@ function generateVideoThumbnail(file, container) {
     video.addEventListener('seeked', () => {
         try {
             const canvas = document.createElement('canvas');
-            canvas.width = 400;
-            canvas.height = 300;
+            canvas.width = 200;
+            canvas.height = 150;
 
             const ctx = canvas.getContext('2d');
 
@@ -396,7 +458,8 @@ function openImageLightbox(file) {
     }
 
     showImageInLightbox(imageFiles[currentImageIndex]);
-    imageLightbox.classList.remove('hidden');
+    imagePanel.classList.remove('hidden');
+    imagePanel.classList.remove('minimized');
 }
 
 // Show Image in Lightbox
@@ -413,13 +476,13 @@ function showImageInLightbox(file) {
     `;
 
     // Show/hide navigation buttons
-    prevImageBtn.style.display = imageFiles.length > 1 ? 'block' : 'none';
-    nextImageBtn.style.display = imageFiles.length > 1 ? 'block' : 'none';
+    prevImageBtn.style.display = imageFiles.length > 1 ? 'inline-flex' : 'none';
+    nextImageBtn.style.display = imageFiles.length > 1 ? 'inline-flex' : 'none';
 }
 
 // Close Lightbox
 function closeLightbox() {
-    imageLightbox.classList.add('hidden');
+    imagePanel.classList.add('hidden');
     lightboxImage.src = '';
 }
 
@@ -458,9 +521,9 @@ function playVideo(file) {
         <strong>Modified:</strong> ${new Date(file.modified).toLocaleString()}
     `;
 
-    // Show player
-    playerSection.classList.remove('hidden');
-    playerSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Show player panel
+    playerPanel.classList.remove('hidden');
+    playerPanel.classList.remove('minimized');
 
     // Play after load
     player.play();
@@ -491,7 +554,7 @@ function getContentType(filename) {
 // Close Player
 function closePlayer() {
     player.pause();
-    playerSection.classList.add('hidden');
+    playerPanel.classList.add('hidden');
 }
 
 // Apply Filters

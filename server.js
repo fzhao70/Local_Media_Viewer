@@ -165,13 +165,13 @@ app.get('/api/thumbnail/image/*', async (req, res) => {
       return res.send(gifBuffer);
     }
 
-    // Generate thumbnail for other image formats
+    // Generate thumbnail for other image formats (low resolution for performance)
     const thumbnail = await sharp(filePath)
-      .resize(400, 300, {
+      .resize(200, 150, {
         fit: 'cover',
         position: 'center'
       })
-      .jpeg({ quality: 80 })
+      .jpeg({ quality: 60 })
       .toBuffer();
 
     res.set('Content-Type', 'image/jpeg');
