@@ -84,6 +84,24 @@
             </div>
         </section>
 
+        <!-- Image Lightbox -->
+        <div id="imageLightbox" class="lightbox hidden">
+            <div class="lightbox-content">
+                <div class="lightbox-header">
+                    <h2 id="lightboxFileName">Image Viewer</h2>
+                    <button id="closeLightbox" class="btn btn-close">✕</button>
+                </div>
+                <div class="lightbox-image-wrapper">
+                    <button id="prevImage" class="lightbox-nav lightbox-nav-left">‹</button>
+                    <img id="lightboxImage" src="" alt="Full size image">
+                    <button id="nextImage" class="lightbox-nav lightbox-nav-right">›</button>
+                </div>
+                <div class="lightbox-info">
+                    <p id="lightboxInfo"></p>
+                </div>
+            </div>
+        </div>
+
         <!-- Media Grid -->
         <section id="mediaSection" class="media-section hidden">
             <div id="mediaGrid" class="media-grid">

@@ -3,6 +3,7 @@ const cors = require('cors');
 const fs = require('fs').promises;
 const path = require('path');
 const { existsSync, statSync } = require('fs');
+const sharp = require('sharp');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -137,6 +138,62 @@ app.get('/api/media/*', (req, res) => {
     res.writeHead(200, head);
     require('fs').createReadStream(filePath).pipe(res);
   }
+});
+
+// Serve image thumbnails
+app.get('/api/thumbnail/image/*', async (req, res) => {
+  const filePath = decodeURIComponent(req.params[0]);
+
+  if (!existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+
+  try {
+    const ext = path.extname(filePath).toLowerCase();
+
+    // For SVG, serve directly without processing
+    if (ext === '.svg') {
+      res.set('Content-Type', 'image/svg+xml');
+      const svgBuffer = await fs.readFile(filePath);
+      return res.send(svgBuffer);
+    }
+
+    // For GIF, serve directly to preserve animation
+    if (ext === '.gif') {
+      res.set('Content-Type', 'image/gif');
+      const gifBuffer = await fs.readFile(filePath);
+      return res.send(gifBuffer);
+    }
+
+    // Generate thumbnail for other image formats
+    const thumbnail = await sharp(filePath)
+      .resize(400, 300, {
+        fit: 'cover',
+        position: 'center'
+      })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+
+    res.set('Content-Type', 'image/jpeg');
+    res.send(thumbnail);
+  } catch (error) {
+    console.error('Thumbnail generation error:', error);
+    res.status(500).json({ error: 'Failed to generate thumbnail' });
+  }
+});
+
+// Endpoint to generate video thumbnail (returns video URL for client-side generation)
+app.post('/api/thumbnail/video', (req, res) => {
+  const { filePath } = req.body;
+
+  if (!filePath || !existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+
+  // Return the media URL for client-side thumbnail generation
+  res.json({
+    mediaUrl: `/api/media/${encodeURIComponent(filePath)}`
+  });
 });
 
 // Get content type based on file extension

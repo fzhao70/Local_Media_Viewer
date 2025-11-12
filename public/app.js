@@ -3,6 +3,8 @@ let mediaFiles = [];
 let filteredFiles = [];
 let currentFilter = 'all';
 let player = null;
+let currentImageIndex = 0;
+let imageFiles = [];
 
 // DOM Elements
 const directoryInput = document.getElementById('directoryInput');
@@ -21,6 +23,15 @@ const videoPlayer = document.getElementById('videoPlayer');
 const currentFileName = document.getElementById('currentFileName');
 const fileInfo = document.getElementById('fileInfo');
 
+// Lightbox elements
+const imageLightbox = document.getElementById('imageLightbox');
+const closeLightboxBtn = document.getElementById('closeLightbox');
+const lightboxImage = document.getElementById('lightboxImage');
+const lightboxFileName = document.getElementById('lightboxFileName');
+const lightboxInfo = document.getElementById('lightboxInfo');
+const prevImageBtn = document.getElementById('prevImage');
+const nextImageBtn = document.getElementById('nextImage');
+
 // Initialize
 function init() {
     setupEventListeners();
@@ -38,6 +49,27 @@ function setupEventListeners() {
     scanBtn.addEventListener('click', scanDirectory);
     closePlayerBtn.addEventListener('click', closePlayer);
     searchInput.addEventListener('input', handleSearch);
+
+    // Lightbox controls
+    closeLightboxBtn.addEventListener('click', closeLightbox);
+    prevImageBtn.addEventListener('click', showPreviousImage);
+    nextImageBtn.addEventListener('click', showNextImage);
+
+    // Close lightbox on background click
+    imageLightbox.addEventListener('click', (e) => {
+        if (e.target === imageLightbox) {
+            closeLightbox();
+        }
+    });
+
+    // Keyboard navigation for lightbox
+    document.addEventListener('keydown', (e) => {
+        if (!imageLightbox.classList.contains('hidden')) {
+            if (e.key === 'Escape') closeLightbox();
+            if (e.key === 'ArrowLeft') showPreviousImage();
+            if (e.key === 'ArrowRight') showNextImage();
+        }
+    });
 
     filterBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -194,9 +226,16 @@ function createMediaItem(file) {
     const thumbnail = document.createElement('div');
     thumbnail.className = 'media-thumbnail';
 
-    // Add icon based on type
-    const icon = getMediaIcon(file.type);
-    thumbnail.innerHTML = `<span class="video-overlay">${icon}</span>`;
+    // Generate thumbnail based on type
+    if (file.type === 'image') {
+        generateImageThumbnail(file, thumbnail);
+    } else if (file.type === 'video') {
+        generateVideoThumbnail(file, thumbnail);
+    } else {
+        // Audio files get an icon
+        const icon = getMediaIcon(file.type);
+        thumbnail.innerHTML = `<span class="video-overlay">${icon}</span>`;
+    }
 
     const info = document.createElement('div');
     info.className = 'media-info';
@@ -229,6 +268,95 @@ function createMediaItem(file) {
     return item;
 }
 
+// Generate Image Thumbnail
+function generateImageThumbnail(file, container) {
+    const img = document.createElement('img');
+    img.src = `http://localhost:3000/api/thumbnail/image/${encodeURIComponent(file.path)}`;
+    img.alt = file.name;
+    img.loading = 'lazy';
+
+    // Add loading indicator
+    const icon = getMediaIcon(file.type);
+    container.innerHTML = `<span class="video-overlay thumbnail-loading">${icon}</span>`;
+
+    img.onload = () => {
+        container.innerHTML = '';
+        container.appendChild(img);
+    };
+
+    img.onerror = () => {
+        // Fallback to icon if thumbnail generation fails
+        container.innerHTML = `<span class="video-overlay">${icon}</span>`;
+    };
+}
+
+// Generate Video Thumbnail using Canvas
+function generateVideoThumbnail(file, container) {
+    const mediaUrl = `http://localhost:3000/api/media/${encodeURIComponent(file.path)}`;
+
+    // Create hidden video element for thumbnail capture
+    const video = document.createElement('video');
+    video.src = mediaUrl;
+    video.crossOrigin = 'anonymous';
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'metadata';
+
+    // Add loading indicator
+    const icon = getMediaIcon(file.type);
+    container.innerHTML = `<span class="video-overlay thumbnail-loading">${icon}</span>`;
+
+    video.addEventListener('loadeddata', () => {
+        // Seek to 10% of video duration for a better frame
+        video.currentTime = Math.min(video.duration * 0.1, 5);
+    });
+
+    video.addEventListener('seeked', () => {
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = 400;
+            canvas.height = 300;
+
+            const ctx = canvas.getContext('2d');
+
+            // Calculate aspect ratio
+            const videoAspect = video.videoWidth / video.videoHeight;
+            const canvasAspect = canvas.width / canvas.height;
+
+            let sx = 0, sy = 0, sw = video.videoWidth, sh = video.videoHeight;
+
+            if (videoAspect > canvasAspect) {
+                // Video is wider
+                sw = video.videoHeight * canvasAspect;
+                sx = (video.videoWidth - sw) / 2;
+            } else {
+                // Video is taller
+                sh = video.videoWidth / canvasAspect;
+                sy = (video.videoHeight - sh) / 2;
+            }
+
+            ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+            // Replace container content with canvas
+            container.innerHTML = '';
+            container.appendChild(canvas);
+
+            // Add play icon overlay
+            const playIcon = document.createElement('span');
+            playIcon.className = 'video-overlay';
+            playIcon.innerHTML = '▶';
+            container.appendChild(playIcon);
+        } catch (error) {
+            console.error('Error generating video thumbnail:', error);
+            container.innerHTML = `<span class="video-overlay">${icon}</span>`;
+        }
+    });
+
+    video.addEventListener('error', () => {
+        container.innerHTML = `<span class="video-overlay">${icon}</span>`;
+    });
+}
+
 // Get Media Icon
 function getMediaIcon(type) {
     const icons = {
@@ -253,9 +381,60 @@ function openMedia(file) {
     if (file.type === 'video' || file.type === 'audio') {
         playVideo(file);
     } else if (file.type === 'image') {
-        // For images, you could implement a lightbox or image viewer
-        alert('Image viewer coming soon! File: ' + file.name);
+        openImageLightbox(file);
     }
+}
+
+// Open Image Lightbox
+function openImageLightbox(file) {
+    // Get all image files from filtered files
+    imageFiles = filteredFiles.filter(f => f.type === 'image');
+    currentImageIndex = imageFiles.findIndex(f => f.path === file.path);
+
+    if (currentImageIndex === -1) {
+        currentImageIndex = 0;
+    }
+
+    showImageInLightbox(imageFiles[currentImageIndex]);
+    imageLightbox.classList.remove('hidden');
+}
+
+// Show Image in Lightbox
+function showImageInLightbox(file) {
+    const imageUrl = `http://localhost:3000/api/media/${encodeURIComponent(file.path)}`;
+
+    lightboxImage.src = imageUrl;
+    lightboxFileName.textContent = file.name;
+    lightboxInfo.innerHTML = `
+        <strong>Path:</strong> ${file.relativePath}<br>
+        <strong>Size:</strong> ${formatFileSize(file.size)}<br>
+        <strong>Modified:</strong> ${new Date(file.modified).toLocaleString()}<br>
+        <strong>Image ${currentImageIndex + 1} of ${imageFiles.length}</strong>
+    `;
+
+    // Show/hide navigation buttons
+    prevImageBtn.style.display = imageFiles.length > 1 ? 'block' : 'none';
+    nextImageBtn.style.display = imageFiles.length > 1 ? 'block' : 'none';
+}
+
+// Close Lightbox
+function closeLightbox() {
+    imageLightbox.classList.add('hidden');
+    lightboxImage.src = '';
+}
+
+// Show Previous Image
+function showPreviousImage() {
+    if (imageFiles.length === 0) return;
+    currentImageIndex = (currentImageIndex - 1 + imageFiles.length) % imageFiles.length;
+    showImageInLightbox(imageFiles[currentImageIndex]);
+}
+
+// Show Next Image
+function showNextImage() {
+    if (imageFiles.length === 0) return;
+    currentImageIndex = (currentImageIndex + 1) % imageFiles.length;
+    showImageInLightbox(imageFiles[currentImageIndex]);
 }
 
 // Play Video
