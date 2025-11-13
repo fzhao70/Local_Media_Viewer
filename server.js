@@ -79,14 +79,36 @@ async function generateVideoThumbnail(videoPath, useHardwareAcceleration = false
     const tempFilename = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
     const tempPath = path.join(os.tmpdir(), tempFilename);
 
+    // Check if ffmpeg is available
     const command = ffmpeg(videoPath);
+
+    // Set ffmpeg and ffprobe paths if they exist in common locations
+    // This helps when ffmpeg is installed but not in PATH
+    const commonPaths = {
+      linux: ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg'],
+      darwin: ['/usr/local/bin/ffmpeg', '/opt/homebrew/bin/ffmpeg'],
+      win32: ['C:\\ffmpeg\\bin\\ffmpeg.exe', 'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe']
+    };
+
+    // Try to set ffmpeg path based on platform
+    const platform = os.platform();
+    if (commonPaths[platform]) {
+      for (const ffmpegPath of commonPaths[platform]) {
+        if (existsSync(ffmpegPath)) {
+          command.setFfmpegPath(ffmpegPath);
+          const ffprobePath = ffmpegPath.replace('ffmpeg', 'ffprobe');
+          if (existsSync(ffprobePath)) {
+            command.setFfprobePath(ffprobePath);
+          }
+          break;
+        }
+      }
+    }
 
     // Add hardware acceleration if requested
     if (useHardwareAcceleration) {
       // Try to use hardware acceleration with automatic detection
       // FFmpeg will fall back to software decoding if hardware acceleration fails
-      const platform = os.platform();
-
       if (platform === 'darwin') {
         // macOS - use VideoToolbox
         command.inputOptions(['-hwaccel videotoolbox']);
@@ -130,8 +152,17 @@ async function generateVideoThumbnail(videoPath, useHardwareAcceleration = false
         }
       })
       .on('error', (error) => {
+        // Check if this is an ffmpeg/ffprobe not found error
+        if (error.message.includes('ffmpeg') || error.message.includes('ffprobe')) {
+          const installMessage = 'FFmpeg is not installed or not in PATH. Please install FFmpeg:\n' +
+            '  Linux: sudo apt-get install ffmpeg (Debian/Ubuntu) or sudo yum install ffmpeg (RedHat/CentOS)\n' +
+            '  macOS: brew install ffmpeg\n' +
+            '  Windows: Download from https://ffmpeg.org/download.html and add to PATH';
+          console.error(installMessage);
+          reject(new Error(installMessage));
+        }
         // If hardware acceleration fails, retry without it
-        if (useHardwareAcceleration) {
+        else if (useHardwareAcceleration && !error.message.includes('ffmpeg')) {
           console.warn('Hardware acceleration failed, retrying with software decoding:', error.message);
           generateVideoThumbnail(videoPath, false).then(resolve).catch(reject);
         } else {

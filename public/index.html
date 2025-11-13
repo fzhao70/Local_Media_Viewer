@@ -113,12 +113,12 @@
                 </div>
                 <div class="player-options">
                     <label class="option-label">
-                        <input type="checkbox" id="loopVideo" class="option-checkbox">
-                        <span>Loop current video</span>
-                    </label>
-                    <label class="option-label">
-                        <input type="checkbox" id="autoplayNext" class="option-checkbox" checked>
-                        <span>Autoplay next video</span>
+                        <span>After playback:</span>
+                        <select id="playbackMode" class="playback-mode-select">
+                            <option value="stop">Stop</option>
+                            <option value="loop">Loop current video</option>
+                            <option value="autoplay" selected>Autoplay next video</option>
+                        </select>
                     </label>
                 </div>
                 <div class="player-info">

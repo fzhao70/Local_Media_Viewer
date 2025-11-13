@@ -60,8 +60,7 @@ const nextVideoBtn = document.getElementById('nextVideo');
 const videoPlayer = document.getElementById('videoPlayer');
 const currentFileName = document.getElementById('currentFileName');
 const fileInfo = document.getElementById('fileInfo');
-const loopVideoCheckbox = document.getElementById('loopVideo');
-const autoplayNextCheckbox = document.getElementById('autoplayNext');
+const playbackModeSelect = document.getElementById('playbackMode');
 
 // Image Viewer Panel elements
 const imagePanel = document.getElementById('imagePanel');
@@ -93,11 +92,9 @@ function init() {
         directoryInput.value = savedDirectory;
     }
 
-    // Restore autoplay preference from localStorage
-    const autoplayPref = localStorage.getItem('autoplayNext');
-    if (autoplayPref !== null) {
-        autoplayNextCheckbox.checked = autoplayPref === 'true';
-    }
+    // Restore playback mode preference from localStorage (default: autoplay)
+    const playbackMode = localStorage.getItem('playbackMode') || 'autoplay';
+    playbackModeSelect.value = playbackMode;
 
     // Restore hardware acceleration preference from localStorage
     const hwAccelPref = localStorage.getItem('useHardwareAcceleration');
@@ -126,11 +123,14 @@ function setupEventListeners() {
     prevVideoBtn.addEventListener('click', playPreviousVideo);
     nextVideoBtn.addEventListener('click', playNextVideo);
 
-    // Video playback options
-    loopVideoCheckbox.addEventListener('change', handleLoopChange);
-    autoplayNextCheckbox.addEventListener('change', () => {
+    // Video playback mode selection
+    playbackModeSelect.addEventListener('change', () => {
         // Save preference to localStorage for persistence
-        localStorage.setItem('autoplayNext', autoplayNextCheckbox.checked);
+        localStorage.setItem('playbackMode', playbackModeSelect.value);
+        // Update player loop state immediately
+        if (player) {
+            player.loop = playbackModeSelect.value === 'loop';
+        }
     });
 
     // Image Viewer Panel controls
@@ -343,32 +343,26 @@ function setupPlyrPlayer() {
 }
 
 /**
- * Handle loop checkbox change
- * Updates the video player's loop property when the user toggles the loop checkbox.
- */
-function handleLoopChange() {
-    if (player) {
-        player.loop = loopVideoCheckbox.checked;
-    }
-}
-
-/**
  * Handle video ended event
- * Determines what happens when a video finishes playing:
- * - If loop is enabled, the video repeats (handled by player)
- * - If autoplay next is enabled, plays the next video in the playlist
- * - Otherwise, the video just stops
+ * Determines what happens when a video finishes playing based on playback mode:
+ * - 'stop': Video just stops
+ * - 'loop': Video repeats (handled automatically by player.loop)
+ * - 'autoplay': Plays the next video in the playlist
  */
 function handleVideoEnded() {
-    // If loop is enabled, the player will handle it automatically
-    if (loopVideoCheckbox.checked) {
+    const playbackMode = playbackModeSelect.value;
+
+    // If loop mode is enabled, the player will handle it automatically
+    if (playbackMode === 'loop') {
         return;
     }
 
-    // If autoplay next is enabled, play next video in playlist
-    if (autoplayNextCheckbox.checked) {
+    // If autoplay mode is enabled, play next video in playlist
+    if (playbackMode === 'autoplay') {
         playNextVideo();
     }
+
+    // If stop mode, video just ends (do nothing)
 }
 
 /**
@@ -871,9 +865,9 @@ function playVideo(file) {
     playerPanel.classList.remove('hidden');
     playerPanel.classList.remove('minimized');
 
-    // Update loop state from checkbox
+    // Update loop state based on playback mode
     if (player) {
-        player.loop = loopVideoCheckbox.checked;
+        player.loop = playbackModeSelect.value === 'loop';
     }
 
     // Force resize after showing panel to ensure video fills properly
