@@ -431,6 +431,27 @@ header h1 {
     height: 16px;
 }
 
+.playback-mode-select {
+    padding: 0.4rem 0.75rem;
+    background: var(--background);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    cursor: pointer;
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.playback-mode-select:hover {
+    border-color: var(--primary-color);
+}
+
+.playback-mode-select:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+}
+
 .option-label:hover {
     color: var(--primary-color);
 }
